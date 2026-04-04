@@ -54,15 +54,20 @@ class RevenueEngine:
         total_yearly_revenue = 0
         
         for i, month in enumerate(months):
-            # Apply seasonality + random noise (3-7%)
+            # Apply aggressive seasonality + random noise (up to 25%)
             season_mult = RevenueEngine.SEASONALITY.get(month, 1.0)
-            noise = 1 + random.uniform(-0.05, 0.05)
+            
+            # Create occasional 'black swan' months (huge dip or huge peak)
+            variance = random.uniform(-0.15, 0.15)
+            if i % 5 == 0: variance += random.choice([-0.35, 0.45])
+            
+            noise = 1 + variance
             
             # Monthly Revenue Calculation
             m_rev = (avg_ticket_size * current_monthly_velocity * season_mult * noise)
             
             # Monthly Growth Trend Integration (Linear + Cyclical)
-            trend_factor = 1 + (i * 0.015) # Assume 1.5% MoM organic growth
+            trend_factor = 1 + (i * 0.02) # Assume 2% MoM organic growth
             m_rev *= trend_factor
             
             monthly_data.append({

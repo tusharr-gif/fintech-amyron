@@ -12,7 +12,8 @@ from services.benchmarks import get_sector_benchmark, detect_anomalies
 from services.chatbot import get_chatbot_response
 from services.gstin_verifier import verify_gstin
 from services.revenue_engine import RevenueEngine
-from services.revenue_engine import RevenueEngine
+from services.fraud_graph import fraud_engine
+from services.policy_engine import policy_engine
 
 app = FastAPI(
     title="CreditPulse API",
@@ -80,7 +81,8 @@ class CreditScoreResponse(BaseModel):
     fraud_signals: Dict[str, Any]
     data_signals_used: List[str]
     revenue_analytics: Optional[Dict[str, Any]] = None
-    risk_meter: List[RiskDimension] # Added missing risk_meter
+    risk_meter: List[RiskDimension]
+    active_policies: List[str] = []
 
 # ─────────────────────────────────────────────
 # ENTITY DATABASE (Simulated GSTIN Registry)
@@ -122,31 +124,45 @@ ENTITY_MAP = {
 
 def run_scoring_engine(gstin: str, entity: dict) -> dict:
     """
-    Gradient Boosting-inspired deterministic scoring engine.
-    Uses GSTIN as a seed for reproducible, realistic outputs.
+    Adaptive scoring engine with Graph Fraud Detection and Policy Overrides.
     """
     random.seed(gstin)
     
     sector = entity.get("sector", "General Trade")
     years = entity.get("years_in_business", 2)
     
+    # 1. ── DYNAMIC POLICY OVERRIDES ──
+    # Fetch active policies (Amnesty, Sector boosts, etc.)
+    overrides, active_policies = policy_engine.get_overrides(entity)
+    
+    # 2. ── GRAPH FRAUD ANALYSIS ──
+    # Impact score directly if suspicious trading cycles are detected
+    fraud_data = fraud_engine.analyze_entity(gstin)
+    fraud_penalty = 150 if fraud_data["flag"] == "ALERT" else 0
+    
     # Feature Engineering Layer
     features = {
         "gstin_regularity": random.uniform(0.6, 1.0),
-        "upi_inflow_velocity": random.uniform(300000, 900000),
-        "upi_outflow_velocity": random.uniform(200000, 700000),
+        "upi_inflow_velocity": random.uniform(300000, 1200000),
+        "upi_outflow_velocity": random.uniform(200000, 1000000),
         "cash_flow_volatility": random.uniform(0.05, 0.45),
         "customer_concentration": random.uniform(0.1, 0.85),
-        "circular_trading_flag": random.choice([0, 0, 0, 0, 1]),  # 20% chance
-        "sector_risk_modifier": {"Manufacturing": 1.05, "IT & Software": 1.15, "Retail": 0.95, "General Trade": 0.90}.get(sector, 1.0),
+        "circular_trading_flag": 1 if fraud_data["flag"] == "ALERT" else 0,
+        "sector_risk_modifier": overrides.get("sector_risk_modifier", {"Manufacturing": 1.05, "IT & Software": 1.15, "Retail": 0.95, "General Trade": 0.90}.get(sector, 1.0)),
         "revenue_growth_qoq": random.uniform(-0.1, 0.3),
         "eway_bill_consistency": random.uniform(0.5, 1.0),
         "years_in_business": min(years / 10.0, 1.0),
+        "fraud_risk_score": fraud_data["fraud_risk_score"]
     }
     
-    # Score Calculation (weighted sum, clamped 300-900)
+    # 3. ── CORE SCORING CALCULATION ──
+    # Application of Policy Override: Waiver of late filing penalty in amnesty
+    gst_points = features["gstin_regularity"] * 250
+    if "gstin_delay_penalty" in overrides and features["gstin_regularity"] < 0.8:
+         gst_points = 250 # Waive the penalty for late filings
+         
     raw_score = (
-        features["gstin_regularity"] * 250 +
+        gst_points +
         (features["upi_inflow_velocity"] / 1000000) * 100 +
         (1 - features["cash_flow_volatility"]) * 120 +
         (1 - features["customer_concentration"]) * 80 +
@@ -156,7 +172,13 @@ def run_scoring_engine(gstin: str, entity: dict) -> dict:
         max(0, features["revenue_growth_qoq"]) * 50
     ) * features["sector_risk_modifier"]
     
+    # Apply Fraud Penalty (Circular Trading Loop Detection)
+    raw_score -= fraud_penalty
+    
     score = int(min(900, max(300, raw_score + 300)))
+    features["active_policies"] = active_policies
+    features["fraud_analysis"] = fraud_data
+    
     return score, features
 
 def build_full_response(gstin: str) -> CreditScoreResponse:
@@ -218,9 +240,16 @@ def build_full_response(gstin: str) -> CreditScoreResponse:
         FeatureContribution(label="Growth Rate", value=round(max(0, features["revenue_growth_qoq"]) * 100, 1), is_positive=features["revenue_growth_qoq"] > 0),
     ]
     
-    # Score Trend (12-month history simulation)
+    # Score Trend (12-month history simulation with Highs/Lows)
     months = ["Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct"]
-    trend = [ScorePoint(month=m, score=max(300, min(900, score + random.randint(-60, 60)))) for m in months]
+    trend = []
+    for i, m in enumerate(months):
+        # Create a more dynamic trend with occasional dips and surges
+        base_variance = random.randint(-120, 120)
+        # Add a "bad month" or "peak month" every 4-5 months
+        if i % 4 == 0:
+            base_variance += random.choice([-150, 180])
+        trend.append(ScorePoint(month=m, score=max(300, min(900, score + base_variance))))
     trend[-1] = ScorePoint(month="Oct", score=score)  # Latest = current
     
     # Data signals used
@@ -305,7 +334,8 @@ def build_full_response(gstin: str) -> CreditScoreResponse:
         fraud_signals=fraud_signals,
         data_signals_used=signals,
         revenue_analytics=revenue_analytics,
-        risk_meter=risk_meter
+        risk_meter=risk_meter,
+        active_policies=features.get("active_policies", [])
     )
 
 # ─────────────────────────────────────────────
@@ -420,6 +450,16 @@ async def get_live_update(gstin: str, current_score: int):
         "timestamp": datetime.now().strftime("%I:%M:%S %p")
     }
 
+@app.get("/fraud/graph/{gstin}")
+async def get_fraud_graph(gstin: str):
+    """
+    Returns D3-ready graph nodes and edges for fraud network visualization.
+    """
+    try:
+        return fraud_engine.get_graph_visualization(gstin)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -1,6 +1,6 @@
 "use client";
-import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { motion, AnimatePresence, useSpring, useTransform, useMotionValue } from 'framer-motion';
 import {
   Activity, ShieldCheck, Gauge, Zap, TrendingUp, ArrowRight,
   BarChart, Server, MessageCircle, Send, X, AlertTriangle,
@@ -19,107 +19,231 @@ const TABS = [
   { key: 'advisor', label: 'Loan Advisor', icon: CreditCard },
   { key: 'improve', label: 'Improve Score', icon: TrendingUp },
   { key: 'benchmark', label: 'Sector Bench', icon: BarChart },
-  { key: 'fraud', label: 'Risk Signals', icon: ShieldCheck },
+  { key: 'fraud', label: 'Fraud Engine', icon: ShieldCheck },
 ];
 
 // ─────────────────────────────────────────────
-// SUB-COMPONENTS
+// PREMIUM ANIMATED COMPONENTS
 // ─────────────────────────────────────────────
 
-function ScoreGauge({ score }: { score: number }) {
-  const pct = (score - 300) / 600;
-  const R1 = 100, R2 = 82, R3 = 64;
-  const CIRC = (r: number) => 2 * Math.PI * r;
-  const OFFSET = (r: number, p: number) => CIRC(r) - CIRC(r) * p;
+function AnimatedScoreGauge({ score }: { score: number }) {
+  const springConfig = { damping: 20, stiffness: 60, restDelta: 0.001 };
+  const scoreSpring = useSpring(score, springConfig);
+  const displayScore = useTransform(scoreSpring, (latest) => Math.round(latest));
+  
+  useEffect(() => {
+    scoreSpring.set(score);
+  }, [score, scoreSpring]);
+
   const color = score >= 750 ? '#22d3ee' : score >= 600 ? '#f59e0b' : '#ef4444';
-  const colorMid = score >= 750 ? '#818cf8' : score >= 600 ? '#f97316' : '#f43f5e';
-  const glowColor = score >= 750 ? 'rgba(34,211,238,0.5)' : score >= 600 ? 'rgba(245,158,11,0.5)' : 'rgba(239,68,68,0.5)';
-  const label = score >= 750 ? 'EXCELLENT' : score >= 600 ? 'MODERATE' : 'NEEDS WORK';
+  const glowColor = score >= 750 ? 'rgba(34,211,238,0.4)' : score >= 600 ? 'rgba(245,158,11,0.4)' : 'rgba(239,68,68,0.4)';
+  
+  const R = 90;
+  const circumference = 2 * Math.PI * R;
+  const strokeDashoffset = useTransform(scoreSpring, (s) => 
+    circumference - (circumference * (Math.max(300, Math.min(900, s)) - 300)) / 600
+  );
 
   return (
-    <div className="flex flex-col items-center relative">
-      {/* Outer glow ring */}
-      <div className="absolute inset-0 rounded-full" style={{ boxShadow: `0 0 60px ${glowColor}`, borderRadius: '50%', width: '224px', height: '224px', margin: 'auto' }} />
-      <div className="relative w-56 h-56">
-        <svg className="w-full h-full -rotate-90" viewBox="0 0 224 224">
-          <defs>
-            <linearGradient id="scoreGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor={colorMid} />
-              <stop offset="100%" stopColor={color} />
-            </linearGradient>
-            <linearGradient id="ring2Grad" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor={color} stopOpacity="0.3" />
-              <stop offset="100%" stopColor={colorMid} stopOpacity="0.6" />
-            </linearGradient>
-            <linearGradient id="ring3Grad" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor={colorMid} stopOpacity="0.15" />
-              <stop offset="100%" stopColor={color} stopOpacity="0.4" />
-            </linearGradient>
-            <filter id="glow">
-              <feGaussianBlur stdDeviation="3" result="coloredBlur" />
-              <feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge>
-            </filter>
-          </defs>
-          {/* Track rings */}
-          <circle cx="112" cy="112" r={R1} stroke="#111827" strokeWidth="14" fill="none" />
-          <circle cx="112" cy="112" r={R2} stroke="#0f172a" strokeWidth="8" fill="none" />
-          <circle cx="112" cy="112" r={R3} stroke="#0f172a" strokeWidth="5" fill="none" />
-          {/* Outer main ring */}
-          <motion.circle cx="112" cy="112" r={R1}
-            stroke="url(#scoreGrad)" strokeWidth="14" fill="none"
-            strokeDasharray={CIRC(R1)}
-            initial={{ strokeDashoffset: CIRC(R1) }}
-            animate={{ strokeDashoffset: OFFSET(R1, pct) }}
-            transition={{ duration: 2.2, ease: 'easeOut' }}
-            strokeLinecap="round" filter="url(#glow)"
-          />
-          {/* Mid ring (75% of score) */}
-          <motion.circle cx="112" cy="112" r={R2}
-            stroke="url(#ring2Grad)" strokeWidth="8" fill="none"
-            strokeDasharray={CIRC(R2)}
-            initial={{ strokeDashoffset: CIRC(R2) }}
-            animate={{ strokeDashoffset: OFFSET(R2, Math.min(pct + 0.1, 1)) }}
-            transition={{ duration: 2.5, ease: 'easeOut', delay: 0.2 }}
-            strokeLinecap="round"
-          />
-          {/* Inner ring (trust ring) */}
-          <motion.circle cx="112" cy="112" r={R3}
-            stroke="url(#ring3Grad)" strokeWidth="5" fill="none"
-            strokeDasharray={CIRC(R3)}
-            initial={{ strokeDashoffset: CIRC(R3) }}
-            animate={{ strokeDashoffset: OFFSET(R3, Math.min(pct + 0.15, 1)) }}
-            transition={{ duration: 2.8, ease: 'easeOut', delay: 0.4 }}
-            strokeLinecap="round"
-          />
-          {/* Tick marks */}
-          {[0, 60, 120, 180, 240, 300].map((deg, i) => (
-            <line key={i}
-              x1="112" y1="8" x2="112" y2="18"
-              stroke={`${color}40`} strokeWidth="2"
-              transform={`rotate(${deg - 90} 112 112)`}
+    <div className="flex flex-col items-center justify-center relative w-64 h-64 group">
+      {/* Dynamic Glow Layer */}
+      <motion.div 
+        animate={{ opacity: [0.1, 0.2, 0.1], scale: [0.95, 1, 0.95] }}
+        transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+        className="absolute inset-0 rounded-full blur-[40px]"
+        style={{ background: glowColor }}
+      />
+      
+      {/* Modern Radial Gauge */}
+      <svg className="w-full h-full -rotate-90 drop-shadow-[0_0_15px_rgba(34,211,238,0.1)]" viewBox="0 0 200 200">
+        <defs>
+          <linearGradient id="gaugeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#3b82f6" />
+            <stop offset="50%" stopColor="#22d3ee" />
+            <stop offset="100%" stopColor="#10b981" />
+          </linearGradient>
+          <filter id="svgGlow">
+            <feGaussianBlur stdDeviation="3" result="blur" />
+            <feComposite in="SourceGraphic" in2="blur" operator="over" />
+          </filter>
+        </defs>
+        
+        {/* Background Track */}
+        <circle cx="100" cy="100" r={R} stroke="rgba(255,255,255,0.03)" strokeWidth="12" fill="none" />
+        
+        {/* Animated Progress Ring */}
+        <motion.circle 
+          cx="100" cy="100" r={R} 
+          stroke="url(#gaugeGradient)" strokeWidth="12" fill="none"
+          strokeDasharray={circumference}
+          style={{ strokeDashoffset }}
+          strokeLinecap="round"
+          filter="url(#svgGlow)"
+        />
+        
+        {/* Micro-indicators */}
+        {[...Array(60)].map((_, i) => {
+          const rotation = i * 6;
+          const isActive = i / 60 < (score - 300) / 600;
+          return (
+            <line
+              key={i}
+              x1="100" y1="5" x2="100" y2={i % 5 === 0 ? "15" : "10"}
+              stroke={isActive ? color : "rgba(255,255,255,0.1)"}
+              strokeWidth={i % 5 === 0 ? "2" : "1"}
+              transform={`rotate(${rotation} 100 100)`}
             />
-          ))}
-        </svg>
-        {/* Center content */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
-          <motion.div
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ delay: 0.6, type: 'spring', stiffness: 200 }}
-            className="text-[64px] font-black leading-none tracking-tighter"
-            style={{ color, textShadow: `0 0 30px ${glowColor}` }}
-          >{score}</motion.div>
-          <span className="text-[10px] font-black tracking-[0.3em] text-gray-500">/ 900</span>
-          <motion.div
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.2 }}
-            className="mt-1 px-3 py-0.5 rounded-full text-[9px] font-black tracking-widest"
-            style={{ background: `${color}20`, color, border: `1px solid ${color}40` }}
-          >{label}</motion.div>
+          );
+        })}
+      </svg>
+      
+      {/* Center Display */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <div className="text-[10px] items-center gap-1 font-bold tracking-[0.4em] text-gray-500 mb-[-4px] uppercase ml-1 flex">
+          <Activity className="w-3 h-3 text-cyan-400" /> Pulse
+        </div>
+        <motion.div className="text-6xl font-black tracking-tighter text-white tabular-nums drop-shadow-lg">
+          {displayScore}
+        </motion.div>
+        <div className="flex flex-col items-center mt-[-2px]">
+          <span className="text-[9px] font-black tracking-[0.2em] text-gray-400 uppercase opacity-60">OF 900</span>
+          <motion.div 
+            animate={{ color: color }}
+            className="text-[11px] font-black tracking-[0.25em] mt-2 px-3 py-1 rounded-full border border-current bg-current/5"
+          >
+            {score >= 750 ? 'ELITE' : score >= 600 ? 'STABLE' : 'WATCH'}
+          </motion.div>
         </div>
       </div>
     </div>
+  );
+}
+
+function RationalRiskMeter({ metrics }: { metrics: any[] }) {
+  return (
+    <div className="space-y-5">
+      {metrics?.map((m, i) => (
+        <div key={i} className="group">
+          <div className="flex justify-between items-end mb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: m.color || '#22d3ee', boxShadow: `0 0 8px ${m.color || '#22d3ee'}` }} />
+              <span className="text-[10px] font-black tracking-widest text-gray-400 uppercase">{m.name}</span>
+            </div>
+            <div className="flex items-baseline gap-1">
+              <span className="text-lg font-black text-white">{m.value}%</span>
+              <span className="text-[9px] font-bold text-gray-500 uppercase">{m.level}</span>
+            </div>
+          </div>
+          <div className="h-1.5 bg-white/5 rounded-full overflow-hidden relative border border-white/5">
+            <motion.div 
+              initial={{ width: 0 }}
+              animate={{ width: `${m.value}%` }}
+              transition={{ type: "spring", damping: 15, stiffness: 100, delay: i * 0.1 }}
+              className="h-full rounded-full relative"
+              style={{ backgroundColor: m.color || '#22d3ee' }}
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />
+            </motion.div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FraudNetworkGraph({ gstin }: { gstin: string }) {
+  const [graphData, setGraphData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`${API}/fraud/graph/${gstin}`)
+      .then(res => res.json())
+      .then(data => {
+        setGraphData(data);
+        setLoading(false);
+      });
+  }, [gstin]);
+
+  if (loading) return <div className="h-64 flex items-center justify-center text-gray-500 animate-pulse font-black">INITIALIZING GRAPH ENGINE...</div>;
+
+  return (
+    <div className="relative h-96 w-full glass rounded-3xl overflow-hidden border border-white/5">
+      <div className="absolute top-4 left-6 z-10">
+        <h4 className="text-[10px] font-black tracking-widest text-cyan-400 uppercase mb-1">Topology: Multi-Hop Transaction Graph</h4>
+        <p className="text-[9px] text-gray-500 font-bold">MODELLING UPI FLOWS AS DIRECTED EDGES</p>
+      </div>
+      
+      <svg className="w-full h-full" viewBox="0 0 800 400">
+        <defs>
+          <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="15" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="rgba(255,255,255,0.2)" />
+          </marker>
+        </defs>
+        
+        {/* Render Edges */}
+        {graphData.links?.map((link: any, i: number) => {
+          const sourceNode = graphData.nodes.find((n: any) => n.id === link.source);
+          const targetNode = graphData.nodes.find((n: any) => n.id === link.target);
+          if (!sourceNode || !targetNode) return null;
+          
+          // Seeded coordinates for mock view
+          const i1 = graphData.nodes.indexOf(sourceNode);
+          const i2 = graphData.nodes.indexOf(targetNode);
+          const x1 = 100 + (i1 * 120) % 600, y1 = 100 + (i1 * 80) % 250;
+          const x2 = 100 + (i2 * 120) % 600, y2 = 100 + (i2 * 80) % 250;
+          
+          return (
+            <motion.line key={i} x1={x1} y1={y1} x2={x2} y2={y2} 
+              stroke={link.type === 'high_velocity' ? '#f87171' : 'rgba(255,255,255,0.1)'} 
+              strokeWidth={link.type === 'high_velocity' ? 2 : 1} 
+              markerEnd="url(#arrowhead)"
+              initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ delay: 0.5 + i * 0.1 }}
+            />
+          );
+        })}
+        
+        {/* Render Nodes */}
+        {graphData.nodes?.map((node: any, i: number) => {
+          const x = 100 + (i * 120) % 600, y = 100 + (i * 80) % 250;
+          return (
+            <g key={i}>
+              <motion.circle cx={x} cy={y} r={node.val * 1.5} 
+                fill={node.color} opacity={node.id === gstin ? 1 : 0.6}
+                initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', delay: i * 0.1 }}
+                className="cursor-pointer"
+              />
+              <text x={x} y={y + 30} textAnchor="middle" fontSize="9" fill="#9ca3af" fontWeight="bold" className="pointer-events-none uppercase">
+                {node.label}{node.id === gstin ? ' (YOU)' : ''}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      
+      <div className="absolute bottom-4 right-6 flex gap-4">
+        <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-cyan-400" /><span className="text-[9px] font-black text-gray-500">LEGITIMATE NODE</span></div>
+        <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-red-500" /><span className="text-[9px] font-black text-gray-500">SUSPICIOUS NODE</span></div>
+      </div>
+    </div>
+  );
+}
+
+function PolicyAlertBanner({ policies }: { policies: string[] }) {
+  if (!policies || policies.length === 0) return null;
+  return (
+    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
+      className="bg-amber-500/10 border-b border-amber-500/20 px-6 py-2 flex items-center justify-center gap-3 overflow-hidden"
+    >
+      <Zap className="w-4 h-4 text-amber-400 animate-pulse" />
+      <div className="flex items-center gap-2">
+         {policies.map(p => (
+           <span key={p} className="text-[10px] font-black tracking-widest text-amber-400 uppercase">
+             ADAPTIVE POLICY ACTIVE: {p}
+           </span>
+         ))}
+      </div>
+      <div className="text-[9px] font-bold text-amber-500/60 ml-2">SCORING WEIGHTS ADJUSTED REAL-TIME</div>
+    </motion.div>
   );
 }
 
@@ -132,58 +256,80 @@ function Chatbot({ scoreData }: { scoreData: any }) {
   const [typing, setTyping] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const startTour = () => {
-    if ('speechSynthesis' in window) {
-      if (isSpeaking) {
-          window.speechSynthesis.cancel();
-          setIsSpeaking(false);
-          return;
+  useEffect(() => {
+    const loadVoices = () => {
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length > 0) {
+        setAvailableVoices(voices);
       }
-      
-      const scoreAmt = scoreData?.loanAmt ? scoreData.loanAmt.replace('₹', 'Rupees ') : 'a specific amount';
-      const tourScript = `Hi there! I am your Credit Pulse A I Voice Assistant. 
-        Let me guide you through the dashboard!
-        On the left side of your screen, you can see the main animated Score Gauge. Your current business credit score is ${scoreData?.score || 'calculating'}, which puts you in the ${scoreData?.band || 'standard'} risk category.
-        Right below the score gauge, you will find your Multi-Dimensional Risk Meter, and below that, the Feature Contributions, showing exactly how your G S T filings and U P I transactions impact this score.
-        Looking slightly to the right, under the MAX LOAN FACILITY panel, you can see that based on our real-time calculations, you are eligible for up to ${scoreAmt}!
-        You can navigate through the different tabs positioned prominently on the right hand side—like Revenue Intel, Sector Benchmarks, or Improve Score—to view interactive line charts and structured financial advice.
-        If you have any questions, I'm right here in the chat.`;
-        
-      const play = () => {
-          const utterance = new SpeechSynthesisUtterance(tourScript);
-          const voices = window.speechSynthesis.getVoices();
-          // Find female voice signatures usually available on Windows and Chrome
-          const femaleVoice = voices.find(v => v.name.includes('Zira') || v.name.includes('Female') || v.name.includes('Samantha') || v.name.includes('Victoria'));
-          if (femaleVoice) {
-              utterance.voice = femaleVoice;
-          }
-          
-          utterance.rate = 0.95;
-          utterance.pitch = 1.35; // Increased pitch for higher feminine register
-          utterance.volume = 1;
-          
-          utterance.onstart = () => setIsSpeaking(true);
-          utterance.onend = () => setIsSpeaking(false);
-          utterance.onerror = (e) => { console.error(e); setIsSpeaking(false); };
-          
-          window.speechSynthesis.speak(utterance);
-      };
+    };
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+    return () => {
+      window.speechSynthesis.onvoiceschanged = null;
+    };
+  }, []);
 
-      if (window.speechSynthesis.getVoices().length === 0) {
-          window.speechSynthesis.onvoiceschanged = () => {
-              play();
-              window.speechSynthesis.onvoiceschanged = null;
-          };
-      } else {
-          play();
+
+  const startTour = () => {
+    if (!('speechSynthesis' in window)) {
+      alert("Voice tour is not supported in this browser.");
+      return;
+    }
+    
+    // Stop if already speaking
+    if (window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel();
+      if (isSpeaking) {
+        setIsSpeaking(false);
+        return;
       }
-    } else {
-      alert("Text-to-speech is not supported in your browser.");
+    }
+
+    try {
+      const scoreAmt = scoreData?.loanAmt ? String(scoreData.loanAmt).replace('₹', 'Rupees ') : 'the maximum amount';
+      const script = `Hi! I'm your AI Business Advisor. It's great to have you here at Credit Pulse!
+        Your current business credit score is ${scoreData?.score || 'being analyzed right now'}. 
+        You are in the ${scoreData?.band || 'standard'} category.
+        Based on this, you can now avail of loan facilities up to ${scoreAmt}! 
+        I recommend you explore the Revenue and Risk tabs to see your growth potential.
+        If you have any questions, just type them below!`;
+        
+      const utterance = new SpeechSynthesisUtterance(script);
+      
+      // Select the best possible "Girl Voice"
+      const femaleVoice = availableVoices.find(v => 
+        v.name.includes('Female') || 
+        v.name.includes('Zira') || 
+        v.name.includes('Samantha') || 
+        v.name.includes('Victoria') ||
+        v.name.includes('Google UK English Female') ||
+        v.name.includes('Microsoft Sabina') ||
+        v.name.includes('Joanna') ||
+        (v.name.includes('English') && v.name.includes('United States') && !v.name.includes('David') && !v.name.includes('Mark'))
+      ) || availableVoices.find(v => v.lang.includes('en'));
+
+      if (femaleVoice) utterance.voice = femaleVoice;
+      
+      // Pitch/Rate for a clear, friendly female guide
+      utterance.pitch = 1.4; // Higher pitch for "girl voice"
+      utterance.rate = 1.0;
+      utterance.volume = 1.0;
+      
+      utterance.onstart = () => setIsSpeaking(true);
+      utterance.onend = () => setIsSpeaking(false);
+      utterance.onerror = () => setIsSpeaking(false);
+
+      window.speechSynthesis.speak(utterance);
+    } catch (e) {
+      console.error("Speech error:", e);
+      setIsSpeaking(false);
     }
   };
 
@@ -245,7 +391,7 @@ function Chatbot({ scoreData }: { scoreData: any }) {
             initial={{ opacity: 0, scale: 0.8, y: 50 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.8, y: 50 }}
-            className="fixed bottom-28 right-8 z-50 w-96 h-[520px] glass border border-cyan-500/20 rounded-3xl flex flex-col overflow-hidden shadow-2xl"
+            className="fixed bottom-28 right-8 z-50 w-96 h-[520px] bg-[#020617] border border-cyan-500/30 rounded-3xl flex flex-col overflow-hidden shadow-[0_0_50px_rgba(34,211,238,0.1)]"
           >
             {/* Header */}
             <div className="p-4 border-b border-white/5 flex items-center justify-between bg-gradient-to-r from-cyan-500/10 to-blue-600/10">
@@ -276,7 +422,7 @@ function Chatbot({ scoreData }: { scoreData: any }) {
                   <div className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
                     m.role === 'user'
                       ? 'bg-cyan-500 text-black font-bold rounded-br-sm'
-                      : 'glass border border-white/5 text-gray-200 rounded-bl-sm'
+                      : 'bg-white/5 border border-white/10 text-gray-200 rounded-bl-sm'
                   }`}>
                     {m.text}
                   </div>
@@ -284,7 +430,7 @@ function Chatbot({ scoreData }: { scoreData: any }) {
               ))}
               {typing && (
                 <div className="flex justify-start">
-                  <div className="glass border border-white/5 px-4 py-3 rounded-2xl rounded-bl-sm">
+                  <div className="bg-white/5 border border-white/10 px-4 py-3 rounded-2xl rounded-bl-sm">
                     <div className="flex gap-1">
                       {[0, 1, 2].map(i => (
                         <div key={i} className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
@@ -345,41 +491,39 @@ export default function Home() {
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (view === 'dashboard' && data && data.score) {
-      interval = setInterval(async () => {
-        try {
-          const reqId = data.gstin || (activeInput === 'gstin' ? gstin : '27AAPFU0939F1ZV');
-          const res = await fetch(`${API}/live-update/${reqId}?current_score=${data.score}`);
-          if (res.ok) {
-            const liveData = await res.json();
-            if (liveData.score_delta !== 0) {
-              setData((prev: any) => ({ ...prev, score: liveData.new_score, loanAmt: liveData.new_loan_amount || prev.loanAmt, timestamp: liveData.timestamp }));
-              setLiveInsight(liveData.insight);
-            }
-          } else {
-             // Fake micro-fluctuation if API fails
-             const shift = Math.floor(Math.random() * 5) - 2;
-             if (shift !== 0) {
-                 setData((prev: any) => {
-                     const newScore = Math.min(900, Math.max(300, prev.score + shift));
-                     const newLoan = `₹${(1.0 + ((newScore - 300) / 600.0) * 9.0).toFixed(1)} Lakhs`;
-                     return { ...prev, score: newScore, loanAmt: newLoan, timestamp: new Date().toLocaleString('en-IN') };
-                 });
-                 setLiveInsight(shift > 0 ? `+${shift} pts: Positive signal detected` : `${shift} pts: Minor risk fluctuation`);
-             }
-          }
-        } catch (e) {
-             const shift = Math.floor(Math.random() * 5) - 2;
-             if (shift !== 0) {
-                 setData((prev: any) => {
-                     const newScore = Math.min(900, Math.max(300, prev.score + shift));
-                     const newLoan = `₹${(1.0 + ((newScore - 300) / 600.0) * 9.0).toFixed(1)} Lakhs`;
-                     return { ...prev, score: newScore, loanAmt: newLoan, timestamp: new Date().toLocaleString('en-IN') };
-                 });
-                 setLiveInsight(shift > 0 ? `+${shift} pts: Positive signal detected` : `${shift} pts: Minor risk fluctuation`);
-             }
-        }
-      }, 5000);
+    if (view === 'dashboard' && data && activeInput === 'gstin') {
+      interval = setInterval(() => {
+          // Rational Micro-Fluctuation Engine (More Dynamic)
+          const shift = Math.floor(Math.random() * 21) - 10;
+          if (shift !== 0) {
+              setData((prev: any) => {
+                  if (!prev) return prev;
+                  const newScore = Math.min(900, Math.max(300, prev.score + shift));
+                  const newLoan = `₹${(1.0 + ((newScore - 300) / 600.0) * 9.0).toFixed(1)} Lakhs`;
+                  
+                  // Randomly update a revenue metric slightly
+                  const newRev = prev.revenue_analytics ? {
+                    ...prev.revenue_analytics,
+                    yearly_revenue: prev.revenue_analytics.yearly_revenue + (shift * 1000)
+                  } : prev.revenue_analytics;
+
+                  // Sync trend data: update the latest month with the new score
+                  const newTrend = prev.trend?.map((t: any, i: number) => 
+                     i === prev.trend.length - 1 ? { ...t, score: newScore } : t
+                  );
+
+                  return { 
+                    ...prev, 
+                    score: newScore, 
+                    loanAmt: newLoan, 
+                    revenue_analytics: newRev,
+                    trend: newTrend,
+                    timestamp: new Date().toLocaleString('en-IN') 
+                  };
+              });
+              setLiveInsight(shift > 0 ? `+${shift} pts: Organic compliance growth` : `${shift} pts: Market volatility variance`);
+         }
+      }, 4000);
     }
     return () => clearInterval(interval);
   }, [view, data?.score, activeInput, gstin]);
@@ -585,14 +729,9 @@ export default function Home() {
   if (!mounted) return null;
 
   return (
-    <div className="min-h-screen bg-grid text-white selection:bg-cyan-500 selection:text-white overflow-hidden">
-      {/* Background always present */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute top-[-15%] left-[-5%] w-[500px] h-[500px] bg-cyan-500/15 rounded-full blur-[150px] animate-pulse" />
-        <div className="absolute bottom-[-10%] right-[-5%] w-[400px] h-[400px] bg-purple-600/10 rounded-full blur-[120px]" />
-        <div className="absolute top-[40%] right-[20%] w-[300px] h-[300px] bg-blue-600/8 rounded-full blur-[100px]" />
-      </div>
-
+    <div className="min-h-screen relative overflow-hidden bg-dot-grid selection:bg-cyan-500/30">
+      <div className="mesh-bg opacity-40" />
+      <PolicyAlertBanner policies={data?.active_policies} />
       <AnimatePresence mode="wait">
 
       {/* ════════════ LANDING PAGE ════════════ */}
@@ -933,14 +1072,13 @@ export default function Home() {
                     <div className="md:col-span-4 flex flex-col gap-4">
 
                       {/* Main Score Glass Card */}
-                      <div className="relative rounded-[2rem] p-6 flex flex-col items-center gap-4 overflow-hidden"
+                      <div className="glass-panel relative rounded-[2.5rem] p-8 flex flex-col items-center gap-6 overflow-hidden neon-card shadow-2xl"
                         style={{
-                          background: 'linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%)',
-                          backdropFilter: 'blur(24px)',
-                          border: '1px solid rgba(255,255,255,0.07)',
-                          boxShadow: data.score >= 750
-                            ? '0 0 60px rgba(34,211,238,0.08), inset 0 1px 0 rgba(255,255,255,0.06)'
-                            : '0 0 60px rgba(245,158,11,0.08), inset 0 1px 0 rgba(255,255,255,0.06)'
+                          background: 'rgba(15, 23, 42, 0.7)',
+                          borderColor: data.score >= 750 ? 'rgba(34,211,238,0.3)' : 'rgba(245,158,11,0.3)',
+                          boxShadow: data.score >= 750 
+                            ? '0 0 80px -20px rgba(34,211,238,0.2)' 
+                            : '0 0 80px -20px rgba(245,158,11,0.2)'
                         }}
                       >
                         {/* Subtle background grid */}
@@ -965,7 +1103,7 @@ export default function Home() {
                           </motion.div>
                         </AnimatePresence>
 
-                        <ScoreGauge score={data.score} />
+                        <AnimatedScoreGauge score={data.score} />
 
                         {/* ── DOMINANT LOAN FACILITY CARD ── */}
                         <div className="w-full rounded-2xl relative overflow-hidden"
@@ -1158,46 +1296,7 @@ export default function Home() {
                       </div>
 
                       {/* RISK ANALYSIS METER */}
-                      <div className="glass rounded-3xl p-6 relative overflow-hidden">
-                        <div className="flex items-center justify-between mb-6">
-                            <div className="flex items-center gap-2">
-                                <Activity className="w-5 h-5 text-purple-400" />
-                                <h3 className="font-black tracking-tighter">MULTI-DIMENSIONAL RISK METER</h3>
-                            </div>
-                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-purple-500/30 bg-purple-500/10">
-                                <div className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-pulse" />
-                                <span className="text-[9px] font-black tracking-widest text-purple-400">REAL-TIME</span>
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          {data.risk_meter?.map((item: any, i: number) => (
-                            <div key={i} className="bg-white/5 border border-white/10 rounded-2xl p-4 transition-all hover:bg-white/10">
-                              <div className="flex justify-between items-end mb-2">
-                                <p className="text-[10px] text-gray-500 font-bold tracking-widest uppercase">{item.name}</p>
-                                <motion.p 
-                                    className="text-xs font-black" style={{ color: item.color }}
-                                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 * i }}
-                                >
-                                    {item.level}
-                                </motion.p>
-                              </div>
-                              <div className="h-1.5 bg-gray-900 rounded-full overflow-hidden shadow-inner">
-                                <motion.div
-                                  initial={{ width: 0 }} animate={{ width: `${item.value}%` }}
-                                  transition={{ duration: 1.5, delay: 0.2 * i, ease: "easeOut" }}
-                                  className="h-full relative"
-                                  style={{ background: item.color, boxShadow: `0 0 10px ${item.color}80` }}
-                                >
-                                   <div className="absolute inset-0 bg-white/20 w-full animate-pulse" />
-                                </motion.div>
-                              </div>
-                              <div className="mt-1.5 text-right">
-                                  <span className="text-[8px] text-gray-600 font-mono">{item.value}%</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                      <RationalRiskMeter metrics={data.risk_meter} />
 
                       {/* Feature Contributions */}
                       <div className="glass rounded-3xl p-6">
@@ -1409,17 +1508,20 @@ export default function Home() {
                               {/* Bar */}
                               <div className="w-full relative flex-1 flex items-end">
                                 <motion.div
-                                  className="w-full rounded-t-lg relative overflow-hidden cursor-pointer"
+                                  className="w-full rounded-t-lg relative overflow-hidden cursor-pointer origin-bottom"
                                   style={{
                                     height: `${pct}%`,
                                     background: barGrad,
-                                    boxShadow: isLast ? `0 -4px 20px ${glowClr}` : 'none',
+                                    boxShadow: isLast ? `0 -4px 25px ${glowClr}` : 'none',
                                     minHeight: '4px',
                                   }}
                                   initial={{ scaleY: 0, opacity: 0 }}
                                   animate={{ scaleY: 1, opacity: 1 }}
-                                  transition={{ delay: 0.1 + i * 0.07, duration: 0.6, ease: [0.34, 1.56, 0.64, 1] }}
-                                  whileHover={{ scaleY: 1.04, transition: { duration: 0.15 } }}
+                                  transition={{ 
+                                    scaleY: { delay: 0.1 + i * 0.05, duration: 0.9, ease: [0.16, 1, 0.3, 1] },
+                                    opacity: { delay: 0.1 + i * 0.05, duration: 0.5 }
+                                  }}
+                                  whileHover={{ scaleY: 1.1, transition: { duration: 0.2 } }}
                                 >
                                   {/* Shimmer sweep */}
                                   <motion.div
@@ -1744,70 +1846,70 @@ export default function Home() {
                   </div>
                 )}
 
-                {/* ── TAB: RISK SIGNALS ── */}
+                {/* ── TAB: FRAUD ENGINE ── */}
                 {activeTab === 'fraud' && (
-                  <div className="space-y-6">
-                    <div className={`glass rounded-3xl p-8 border-l-4 ${data.fraud?.flag === 'CLEAR' ? 'border-l-green-500' : 'border-l-red-500'}`}>
-                      <div className="flex items-center gap-4 mb-6">
-                        {data.fraud?.flag === 'CLEAR'
-                          ? <CheckCircle className="w-10 h-10 text-green-500" />
-                          : <AlertTriangle className="w-10 h-10 text-red-500" />
-                        }
-                        <div>
-                          <h3 className="text-2xl font-black tracking-tighter">{data.fraud?.flag === 'CLEAR' ? 'FRAUD CLEARANCE: PASS' : 'FRAUD ALERT DETECTED'}</h3>
-                          <p className="text-sm text-gray-400 mt-1">Graph-based network analysis using NetworkX engine</p>
+                  <div className="grid md:grid-cols-3 gap-6">
+                    <div className="md:col-span-2 space-y-6">
+                      <div className={`glass rounded-3xl p-8 border-l-4 ${data.fraud?.flag === 'CLEAR' ? 'border-l-green-500' : 'border-l-red-500'}`}>
+                        <div className="flex items-center gap-4 mb-6">
+                          {data.fraud?.flag === 'CLEAR'
+                            ? <CheckCircle className="w-10 h-10 text-green-500" />
+                            : <AlertTriangle className="w-10 h-10 text-red-500" />
+                          }
+                          <div>
+                            <h3 className="text-2xl font-black tracking-tighter">{data.fraud?.flag === 'CLEAR' ? 'FRAUD CLEARANCE: PASS' : 'FRAUD ALERT DETECTED'}</h3>
+                            <p className="text-sm text-gray-400 mt-1">Graph-based network analysis using NetworkX engine</p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                          {[
+                            { label: 'Fraud Probability', val: `${(data.fraud?.fraud_probability * 100).toFixed(1)}%`, bad: data.fraud?.fraud_probability > 0.3 },
+                            { label: 'Circular Trading', val: data.fraud?.circular_trading_detected ? 'DETECTED' : 'NONE', bad: data.fraud?.circular_trading_detected },
+                            { label: 'Network Centrality', val: data.fraud?.network_centrality, bad: data.fraud?.network_centrality > 0.3 },
+                            { label: 'Overall Flag', val: data.fraud?.flag, bad: data.fraud?.flag !== 'CLEAR' },
+                          ].map(row => (
+                            <div key={row.label} className="bg-white/3 border border-white/5 rounded-2xl p-4">
+                              <p className="text-[9px] text-gray-600 tracking-widest mb-2">{row.label}</p>
+                              <p className={`text-xl font-black ${row.bad ? 'text-red-400' : 'text-green-400'}`}>{row.val}</p>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {[
-                          { label: 'Fraud Probability', val: `${(data.fraud?.fraud_probability * 100).toFixed(1)}%`, bad: data.fraud?.fraud_probability > 0.3 },
-                          { label: 'Circular Trading', val: data.fraud?.circular_trading_detected ? 'DETECTED' : 'NONE', bad: data.fraud?.circular_trading_detected },
-                          { label: 'Network Centrality', val: data.fraud?.network_centrality, bad: data.fraud?.network_centrality > 0.3 },
-                          { label: 'Overall Flag', val: data.fraud?.flag, bad: data.fraud?.flag !== 'CLEAR' },
-                        ].map(row => (
-                          <div key={row.label} className="bg-white/3 border border-white/5 rounded-2xl p-4">
-                            <p className="text-[9px] text-gray-600 tracking-widest mb-2">{row.label}</p>
-                            <p className={`text-xl font-black ${row.bad ? 'text-red-400' : 'text-green-400'}`}>{row.val}</p>
-                          </div>
-                        ))}
-                      </div>
+                      <FraudNetworkGraph gstin={data.gstin} />
                     </div>
 
-                    {data.anomalies?.length > 0 && (
-                      <div className="glass rounded-3xl p-6">
-                        <h3 className="font-black mb-4 flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-amber-400" /> ANOMALY ALERTS</h3>
-                        {data.anomalies.map((a: any, i: number) => (
-                          <div key={i} className={`p-4 rounded-2xl border mb-3 ${a.severity === 'HIGH' ? 'bg-red-500/5 border-red-500/20' : 'bg-amber-500/5 border-amber-500/20'}`}>
-                            <div className="flex justify-between items-start mb-1">
-                              <p className="font-black text-sm">{a.title}</p>
-                              <span className={`text-[10px] font-black px-2 py-0.5 rounded ${a.severity === 'HIGH' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>{a.severity}</span>
+                    <div className="md:col-span-1 space-y-4">
+                      {data.anomalies?.length > 0 && (
+                        <div className="glass rounded-3xl p-6">
+                          <h3 className="font-black mb-4 flex items-center gap-2 text-sm tracking-widest"><AlertTriangle className="w-4 h-4 text-amber-400" /> ANOMALY ALERTS</h3>
+                          {data.anomalies.map((a: any, i: number) => (
+                            <div key={i} className={`p-4 rounded-2xl border mb-3 ${a.severity === 'HIGH' ? 'bg-red-500/5 border-red-500/20' : 'bg-amber-500/5 border-amber-500/20'}`}>
+                              <div className="flex justify-between items-start mb-1">
+                                <p className="font-black text-sm">{a.title}</p>
+                                <span className={`text-[10px] font-black px-2 py-0.5 rounded ${a.severity === 'HIGH' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>{a.severity}</span>
+                              </div>
+                              <p className="text-xs text-gray-400">{a.detail}</p>
+                              <p className="text-[10px] text-gray-600 mt-1 font-bold italic">Detected: {a.detected_on}</p>
                             </div>
-                            <p className="text-xs text-gray-400">{a.detail}</p>
-                            <p className="text-[10px] text-gray-600 mt-1">Detected: {a.detected_on}</p>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
+                      )}
+                      <div className="glass rounded-3xl p-6 border-l-4 border-l-cyan-500">
+                        <h4 className="text-[10px] font-black tracking-[0.2em] text-cyan-400 mb-4 uppercase">Explainable AI (XAI) Insight</h4>
+                        <p className="text-xs text-gray-400 leading-relaxed italic">
+                          "Our graph engine detected complex strongly connected components. This Indicates potential circular trading flows within this network topology. Fraud risk has been weighted accordingly in the composite score."
+                        </p>
                       </div>
-                    )}
-
-                    {data.anomalies?.length === 0 && (
-                      <div className="glass rounded-3xl p-8 text-center">
-                        <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-3" />
-                        <h3 className="font-black text-xl text-green-400">NO ANOMALIES DETECTED</h3>
-                        <p className="text-gray-500 text-sm mt-2">All financial patterns are within normal operating ranges.</p>
-                      </div>
-                    )}
+                    </div>
                   </div>
                 )}
 
               </motion.div>
             </AnimatePresence>
           </div>
-
-          {/* AI Chatbot */}
           <Chatbot scoreData={data} />
         </motion.div>
       )}
-
       </AnimatePresence>
     </div>
   );
